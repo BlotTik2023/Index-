@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firebase Chat</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #auth-container, #chat-container {
+            display: none;
+        }
+        #messages {
+            height: 400px;
+            border: 1px solid #ddd;
+            overflow-y: scroll;
+            margin-bottom: 10px;
+            padding: 10px;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 8px;
+            border-radius: 5px;
+            background-color: #f0f0f0;
+        }
+        .my-message {
+            background-color: #d4edff;
+            text-align: right;
+        }
+        #message-form {
+            display: flex;
+            gap: 10px;
+        }
+        #message-input {
+            flex-grow: 1;
+            padding: 8px;
+        }
+        button {
+            padding: 8px 15px;
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .auth-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+        .auth-form input {
+            padding: 8px;
+        }
+        .auth-switch {
+            text-align: center;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Форма аутентификации -->
+    <div id="auth-container">
+        <div id="login-form" class="auth-form">
+            <h2>Вход</h2>
+            <input type="email" id="login-email" placeholder="Email" required>
+            <input type="password" id="login-password" placeholder="Пароль" required>
+            <button id="login-btn">Войти</button>
+            <div class="auth-switch">
+                Нет аккаунта? <a href="#" id="switch-to-register">Зарегистрироваться</a>
+            </div>
+        </div>
+
+        <div id="register-form" class="auth-form" style="display: none;">
+            <h2>Регистрация</h2>
+            <input type="email" id="register-email" placeholder="Email" required>
+            <input type="password" id="register-password" placeholder="Пароль" required>
+            <input type="password" id="register-confirm" placeholder="Подтвердите пароль" required>
+            <button id="register-btn">Зарегистрироваться</button>
+            <div class="auth-switch">
+                Уже есть аккаунт? <a href="#" id="switch-to-login">Войти</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Интерфейс чата -->
+    <div id="chat-container">
+        <h2>Чат</h2>
+        <div id="user-info" style="margin-bottom: 10px;"></div>
+        <div id="messages"></div>
+        <form id="message-form">
+            <input type="text" id="message-input" placeholder="Введите сообщение..." required>
+            <button type="submit">Отправить</button>
+        </form>
+        <button id="logout-btn" style="margin-top: 10px;">Выйти</button>
+    </div>
+
+    <!-- Подключаем Firebase SDK -->
+    <script type="module">
+        // Импортируем необходимые функции Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.0/firebase-app.js";
+        import { 
+            getAuth, 
+            createUserWithEmailAndPassword, 
+            signInWithEmailAndPassword, 
+            signOut,
+            onAuthStateChanged
+        } from "https://www.gstatic.com/firebasejs/9.6.0/firebase-auth.js";
+        import { 
+            getDatabase, 
+            ref, 
+            push, 
+            onValue 
+        } from "https://www.gstatic.com/firebasejs/9.6.0/firebase-database.js";
+
+        // Ваша конфигурация Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyBbSomMj2R-rKv3LehGygVTMvWeeCT1Gw8",
+            authDomain: "chatinb-f0b21.firebaseapp.com",
+            projectId: "chatinb-f0b21",
+            storageBucket: "chatinb-f0b21.appspot.com",
+            messagingSenderId: "183337415237",
+            appId: "1:183337415237:web:df66968cd3eb816789e92c",
+            databaseURL: "https://chatinb-f0b21-default-rtdb.firebaseio.com/"
+        };
+
+        // Инициализируем Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const database = getDatabase(app);
+
+        // DOM элементы
+        const authContainer = document.getElementById('auth-container');
+        const chatContainer = document.getElementById('chat-container');
+        const loginForm = document.getElementById('login-form');
+        const registerForm = document.getElementById('register-form');
+        const messagesDiv = document.getElementById('messages');
+        const messageForm = document.getElementById('message-form');
+        const messageInput = document.getElementById('message-input');
+        const userInfoDiv = document.getElementById('user-info');
+        
+        // Показываем форму аутентификации по умолчанию
+        authContainer.style.display = 'block';
+        chatContainer.style.display = 'none';
+
+        // Переключение между формами входа и регистрации
+        document.getElementById('switch-to-register').addEventListener('click', (e) => {
+            e.preventDefault();
+            loginForm.style.display = 'none';
+            registerForm.style.display = 'flex';
+        });
+
+        document.getElementById('switch-to-login').addEventListener('click', (e) => {
+            e.preventDefault();
+            registerForm.style.display = 'none';
+            loginForm.style.display = 'flex';
+        });
+
+        // Регистрация нового пользователя
+        document.getElementById('register-btn').addEventListener('click', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('register-email').value;
+            const password = document.getElementById('register-password').value;
+            const confirm = document.getElementById('register-confirm').value;
+            
+            if (password !== confirm) {
+                alert('Пароли не совпадают!');
+                return;
+            }
+            
+            try {
+                await createUserWithEmailAndPassword(auth, email, password);
+                alert('Регистрация успешна!');
+                registerForm.reset();
+                loginForm.style.display = 'flex';
+                registerForm.style.display = 'none';
+            } catch (error) {
+                alert(`Ошибка регистрации: ${error.message}`);
+            }
+        });
+
+        // Вход пользователя
+        document.getElementById('login-btn').addEventListener('click', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+            
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                loginForm.reset();
+            } catch (error) {
+                alert(`Ошибка входа: ${error.message}`);
+            }
+        });
+
+        // Выход пользователя
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            try {
+                await signOut(auth);
+            } catch (error) {
+                alert(`Ошибка выхода: ${error.message}`);
+            }
+        });
+
+        // Отправка сообщения
+        messageForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const message = messageInput.value.trim();
+            if (!message) return;
+            
+            const messagesRef = ref(database, 'messages');
+            push(messagesRef, {
+                text: message,
+                timestamp: Date.now(),
+                userId: auth.currentUser.uid,
+                email: auth.currentUser.email
+            });
+            
+            messageInput.value = '';
+        });
+
+        // Слушатель состояния аутентификации
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // Пользователь вошел в систему
+                authContainer.style.display = 'none';
+                chatContainer.style.display = 'block';
+                userInfoDiv.textContent = `Вы вошли как: ${user.email}`;
+                
+                // Загружаем сообщения
+                const messagesRef = ref(database, 'messages');
+                onValue(messagesRef, (snapshot) => {
+                    messagesDiv.innerHTML = '';
+                    const messages = snapshot.val() || {};
+                    
+                    Object.entries(messages).forEach(([id, message]) => {
+                        const messageDiv = document.createElement('div');
+                        messageDiv.className = message.userId === user.uid ? 'message my-message' : 'message';
+                        messageDiv.innerHTML = `
+                            <strong>${message.email}:</strong> ${message.text}
+                            <div style="font-size: 0.8em; color: #666;">
+                                ${new Date(message.timestamp).toLocaleString()}
+                            </div>
+                        `;
+                        messagesDiv.appendChild(messageDiv);
+                    });
+                    
+                    // Прокручиваем вниз
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                });
+            } else {
+                // Пользователь вышел
+                authContainer.style.display = 'block';
+                chatContainer.style.display = 'none';
+                messagesDiv.innerHTML = '';
+            }
+        });
+    </script>
+</body>
+</html>
